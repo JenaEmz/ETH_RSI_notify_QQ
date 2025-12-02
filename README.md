@@ -16,5 +16,5 @@ pip install pandas
 pip install numpy
 pip install apscheduler
 pip install matplotlib
-nohup python3 -u eth_robot_wt.py 
-ps aux | grep eth_robot_wt.py &
+nohup python3 -u eth_robot_wt.py &
+ps aux | grep eth_robot_wt.py
