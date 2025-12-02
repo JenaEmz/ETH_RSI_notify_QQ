@@ -1,12 +1,12 @@
 # main.py
-import time
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
+import time as time_module
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from wechat_bot import send_text
 from bn_eth import get_eth_data
-from wavetrend import calculate_wavetrend
+from WT_method import calculate_wavetrend
 
 # 全局变量
 last_alert_sent_time = None
@@ -272,7 +272,7 @@ def main():
         
         # 保持主程序运行
         while True:
-            time.sleep(1)
+            time_module.sleep(1)
             
     except KeyboardInterrupt:
         print("\n收到中断信号，正在关闭程序...")
