@@ -1,12 +1,12 @@
 # main.py
 import time
-from datetime import datetime
+from datetime import datetime, time
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from wechat_bot import send_text
 from bn_eth import get_eth_data
-from WT_method import calculate_wavetrend
+from wavetrend import calculate_wavetrend
 
 # 全局变量
 last_alert_sent_time = None
@@ -17,9 +17,38 @@ bn_connection_ok = True  # BN链接状态，初始为True
 bn_failure_count = 0     # BN链接失败次数统计
 bn_last_check_time = None  # 最后一次检查时间
 
+def should_suppress_message():
+    """
+    检查当前时间是否在消息抑制时间段内（北京时间1:00-7:00）
+    Returns:
+        bool: True表示需要抑制消息发送，False表示允许发送
+    """
+    try:
+        # 获取当前时间（使用服务器本地时间，假设服务器已设置为北京时间）
+        now = datetime.now()
+        current_time = now.time()
+        
+        # 定义抑制时间段：1:00-7:00（包括1:00，不包括7:00）
+        suppress_start = time(1, 0, 0)  # 01:00:00
+        suppress_end = time(7, 0, 0)     # 07:00:00
+        
+        # 检查当前时间是否在抑制时间段内
+        if suppress_start <= current_time < suppress_end:
+            print(f"当前时间 {current_time.strftime('%H:%M:%S')} 在抑制时间段内（1:00-7:00），跳过消息发送")
+            return True
+        return False
+    except Exception as e:
+        print(f"检查抑制时间时出错: {e}")
+        return False  # 出错时允许发送，避免因时间检查失败而丢失重要消息
+
 def send_startup_message():
     """发送启动消息"""
     try:
+        # 检查是否在抑制时间段
+        if should_suppress_message():
+            print("启动消息：当前处于抑制时间段，消息发送已跳过")
+            return
+            
         message = "🚀 曼波机器人启动成功！开始监控ETH/USDT WaveTrend指标（15秒间隔）"
         result = send_text(message)
         if result and result.get('errcode') == 0:
@@ -108,6 +137,12 @@ def check_wavetrend_alert():
 def send_alert_with_cooldown(message, current_time):
     """发送警报并更新最后发送时间"""
     global last_alert_sent_time
+    
+    # 检查是否在抑制时间段
+    if should_suppress_message():
+        print(f"警报抑制：当前处于抑制时间段，跳过警报发送: {message}")
+        return
+        
     try:
         result = send_text(message)
         if result and result.get('errcode') == 0:
@@ -139,6 +174,13 @@ def send_daily_status():
     """每天9:00发送状态消息，检查BN链接状态并报告失败次数"""
     global bn_failure_count
     
+    # 检查是否在抑制时间段（虽然9:00不在抑制时间段，但为保险起见还是检查）
+    if should_suppress_message():
+        print("每日状态报告：当前处于抑制时间段，报告发送已跳过")
+        # 注意：即使跳过发送，我们仍然重置失败计数，避免累积
+        bn_failure_count = 0
+        return
+        
     try:
         print("生成每日状态报告...")
         
@@ -158,6 +200,7 @@ def send_daily_status():
 ❌ 昨日失败次数: {bn_failure_count}次
 🕒 最后检查: {last_check_time}
 ⏰ 检查频率: 每15秒一次
+🌙 消息抑制: 北京时间1:00-7:00不发送
 
 💡 系统状态: {'✅ 一切正常' if is_connected else '⚠️ 需要检查'}
 📈 重置统计: 失败次数已清零
@@ -199,7 +242,7 @@ def main():
     # 设置调度器（使用北京时间）
     scheduler = BackgroundScheduler(timezone='Asia/Shanghai')
     
-    # 每15秒执行WaveTrend检查（修改为15秒间隔）[1](@ref)
+    # 每15秒执行WaveTrend检查（修改为15秒间隔）
     scheduler.add_job(
         check_wavetrend_alert,
         'interval',
@@ -215,16 +258,15 @@ def main():
         id='daily_status'
     )
     
-    # 移除了额外的每小时测试连接任务（根据用户要求不要额外线程）
-    
     try:
         # 启动调度器
         scheduler.start()
         print("调度器启动成功")
-        print("• 每15秒检查WaveTrend指标")  # 更新提示信息
+        print("• 每15秒检查WaveTrend指标")
         print("• 每天09:00发送状态报告（北京时间）")
         print("• WT1阈值: >49 或 <-49")
         print("• 警报冷却时间: 30分钟")
+        print("• 消息抑制: 北京时间1:00-7:00不发送消息")
         print("• BN状态检测: 集成在数据获取中（无额外线程）")
         print("=" * 60)
         
@@ -240,16 +282,18 @@ def main():
         if 'scheduler' in locals() and scheduler.running:
             scheduler.shutdown()
         
-        # 发送最终统计报告
+        # 发送最终统计报告（关闭报告不受抑制时间限制）
         stats = get_bn_connection_stats()
         final_report = f"""🔴 曼波机器人已关闭
 运行统计:
 • BN连接最终状态: {'正常' if stats['connection_ok'] else '异常'}
 • 总失败次数: {stats['failure_count']}
 • 最后运行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-• 运行模式: 15秒间隔检测"""
+• 运行模式: 15秒间隔检测
+• 消息抑制: 北京时间1:00-7:00不发送消息"""
         
         try:
+            # 关闭报告不受时间抑制限制，始终发送
             send_text(final_report)
             print("关闭报告已发送")
         except:
