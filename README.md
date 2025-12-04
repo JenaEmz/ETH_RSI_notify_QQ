@@ -9,12 +9,13 @@ sudo apt install -y python3 python3-pip python3-venv wget
 
 python3 -m venv venv
 
-# 2. 激活虚拟环境
+# 4. 激活虚拟环境
 source venv/bin/activate
 pip install requests
 pip install pandas  
 pip install numpy
 pip install apscheduler
 pip install matplotlib
+pip install websockets
 nohup python3 -u eth_robot_wt.py &
 ps aux | grep eth_robot_wt.py
