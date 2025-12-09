@@ -7,6 +7,9 @@ from apscheduler.triggers.cron import CronTrigger
 from wechat_bot import send_text
 from bn_eth import get_eth_data
 from WT_method import calculate_wavetrend
+import bn_liquadation
+import asyncio
+import threading
 
 # 全局变量
 last_alert_sent_time = None
@@ -116,6 +119,9 @@ def check_wavetrend_alert():
         elif wt1 < -49:
             alert_message = f"🌊 曼波，WT1是{wt1:.2f}（当前价格: {current_price:.2f}）"
             should_send_alert = True
+
+        #设置爆仓检查的WT1
+        bn_liquadation.set_WT1(wt1)
         
         # 检查冷却时间
         if should_send_alert:
@@ -230,6 +236,31 @@ def get_bn_connection_stats():
         'last_check_time': bn_last_check_time
     }
 
+def run_script1_monitor():
+    """
+    在新线程中运行爆仓监控函数
+    """
+    def run_async_loop():
+        """在新线程中运行异步事件循环"""
+        try:
+            # 创建新的事件循环[1](@ref)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # 运行脚本1的监控函数
+            script1_monitor_running = True
+            print("启动ETH爆仓监控...")
+            loop.run_until_complete(bn_liquadation.start_eth_liquidations_monitor())
+        except Exception as e:
+            print(f"运行爆仓监控时出错: {e}")
+        finally:
+            script1_monitor_running = False
+    
+    # 启动监控线程
+    monitor_thread = threading.Thread(target=run_async_loop, daemon=True)
+    monitor_thread.start()
+    return monitor_thread
+
 def main():
     """主函数"""
     print("=" * 60)
@@ -302,4 +333,6 @@ def main():
         print("曼波机器人已关闭")
 
 if __name__ == "__main__":
+    script1_monitor_thread = run_script1_monitor()
+    send_text("脚本1爆仓监控已启动")
     main()
